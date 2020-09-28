@@ -90,7 +90,7 @@ def _encrypt_block(block: bytes, key: bytes) -> bytes:
 
 
 
-def _des_round(block: bytes, key: bytes, expansion_table: List[int], substitution_table: List[List[int]]) -> bytes:
+def _des_round(block: bytes, key: bytes, substitution_table: List[List[int]]) -> bytes:
     assert(len(block) == 8) # block should be 8 bytes/64 bits
     assert(len(key) == 6) # block should be 6 bytes/56 bits
 
@@ -99,11 +99,10 @@ def _des_round(block: bytes, key: bytes, expansion_table: List[int], substitutio
     right_half: bytes = block[(len(block)/2):]
 
     # Expand right half
-    expanded_bytes = _expansion(right_half, expansion_table)
+    expanded_bytes = _expansion(right_half)
 
     expanded_bytes = _xor(expanded_bytes, key)
 
-    # Substitution
     compressed_bytes = _substitution(expanded_bytes, substitution_table)
 
     compressed_bytes = _permutation(compressed_bytes)
@@ -113,8 +112,9 @@ def _des_round(block: bytes, key: bytes, expansion_table: List[int], substitutio
     # Combine left and right
     return right_half + new_right_half
 
-def _expansion(half: bytes, expansion_table) -> bytes:
+def _expansion(half: bytes) -> bytes:
     assert(len(half) == 4) # half should be 32 bits
+    expansion_table = [32,1,2,3,4,5,4,5,6,7,8,9,8,9,10,11,12,13,12,13,14,15,16,17,16,17,18,19,20,21,20,21,22,23,24,25,24,25,26,27,28,29,28,29,30,31,32,1]
 
     expanded: bytes = _apply_table(half, expansion_table)
 
@@ -125,7 +125,7 @@ def _substitution(expanded_half: bytes, substitution_table: List[List[int]]) -> 
     # TODO: Implement substitution table
     pass
 
-def _permutation(expanded_half: bytes, permutation_table) -> bytes:
+def _permutation(expanded_half: bytes) -> bytes:
     assert(len(expanded_half) == 6) # expanded should be 48 bits
     permutation_table = [16,7,20,21,29,12,28,17,1,15,23,26,5,18,31,10,2,8,24,14,32,27,3,9,19,13,30,6,22,11,4,25]
 
