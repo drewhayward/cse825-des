@@ -15,8 +15,8 @@ def _left_cycle(b: bytes, shifts: int) -> bytes:
     ex: f(0010, 2) -> 1000
         f(0100, 2) -> 0001 
     """
-    num = int(b, base=16)
-    num_bits = len(b) * 4
+    num = int.from_bytes(b, 'big')
+    num_bits = len(b) * 8
     
     return (((num << shifts) + (num >> (num_bits - shifts))) % (2 ** num_bits)).to_bytes(num_bits // 8, byteorder='big')
 
@@ -98,8 +98,8 @@ def _permuted_choice(expanded_half: bytes, compression_table) -> bytes:
 
 
 if __name__ == "__main__":
-    plaintext = b'abcd1234'
-    key = b'1234abcd'
+    plaintext = bytes.fromhex('abcd1234')
+    key = bytes.fromhex('1234abcd')
 
     ciphertext = encrypt(plaintext, key)
     decrypted = decrypt(ciphertext, key)
