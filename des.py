@@ -1,6 +1,8 @@
 from typing import List
 import math
 
+BYTE_ORDER = 'big'
+NUM_CYCLES = 16
 # TODO: Define expansion/permutation tables in file and load here
 
 
@@ -20,6 +22,21 @@ def _left_cycle(b: bytes, shifts: int) -> bytes:
     
     return (((num << shifts) + (num >> (num_bits - shifts))) % (2 ** num_bits)).to_bytes(num_bits // 8, byteorder='big')
 
+def _apply_table(b: bytes, table: List[int]):
+    num_bits = len(b) * 8
+    # convert bytes to binary string
+    binary_string = bin(int.from_bytes(b, 'big'))[2:].zfill(num_bits)
+
+    # build new binary string
+    output = 'x' * len(table)
+    for pos, src in enumerate(table):
+        output[pos] = binary_string[src]
+
+    assert('x' not in output)
+
+    # convert to bytes
+    return int(output, 2).to_bytes(len(output) // 8, 'big')
+
 
 def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
     # Break plaintext into blocks and pad last block if necessary
@@ -29,72 +46,92 @@ def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
     ciphertext: bytes
     return ciphertext
 
-decrypt = encrypt # DES encryption is it's own inverse
+# DES encryption is it's own inverse ?
+# I think we have to reverse the key order though
+decrypt = encrypt 
 
 def _create_keys(key: bytes) -> List[bytes]:
-    # TODO: Create the C and D subblocks and use them to create 16 subkeys for encryption
+    # TODO: Create subkeys from key
+    num_shifts = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
+
+    left_halves: List[bytes] = [ None ] * (NUM_CYCLES + 1)
+    right_halves: List[bytes] = [ None ] * (NUM_CYCLES + 1)
+
+    binary_key = bin(int.from_bytes(key, 'big'))[2:].zfill(len(key) * 8)
+    
+    left_halves[0] = binary_key[:(len(binary_key) // 2)]
+    right_halves[0] = key[(len(binary_key) // 2):]
+
+    for i, shift in enumerate(num_shifts):
+        pos = i + 1 # Don't shift first position
+        left_halves[pos] = _left_cycle(left_halves[pos - 1], shift)
+        right_halves[pos] = _left_cycle(right_halves[pos - 1], shift)
     pass
 
 def _encrypt_block(block: bytes, key: bytes) -> bytes:
+    # TODO: Finish
     assert(len(block) == 8) # block should be 8 bytes/64 bits
     assert(len(key) == 8) # block should be 8 bytes/64 bits
 
     # Create subkeys through key expansion
-    keys = _create_keys(key)
+    keys: List[bytes] = _create_keys(key)
 
     # Perform initial permutation of message data
 
     # Cycle the block 16 times with the appropriate key-table combinations
     cipher_block = None
     for key in keys:
-        # cipher_block = _des_cycle(cipher_block, key, )
+        # cipher_block = _des_round(cipher_block, key, )
         pass
+
+    # Perform final permutation
 
     # return encrypted block
 
 
 
-def _des_cycle(block: bytes, key: bytes, expansion_table, compression_table) -> bytes:
+def _des_round(block: bytes, key: bytes, expansion_table: List[int], substitution_table: List[List[int]], permutation_table: List[int]) -> bytes:
     assert(len(block) == 8) # block should be 8 bytes/64 bits
     assert(len(key) == 6) # block should be 6 bytes/56 bits
-
-    # Permute key
 
     # Split Data in half
     left_half: bytes = block[:(len(block)/2)]
     right_half: bytes = block[(len(block)/2):]
 
-    assert(len(left_half) == 4)
-    assert(len(left_half) == len(right_half))
-
     # Expand right half
-    expanded_bytes = _expand_half(right_half, expansion_table)
+    expanded_bytes = _expansion(right_half, expansion_table)
 
     expanded_bytes = _xor(expanded_bytes, key)
 
-    compressed_bytes = _permuted_choice(expanded_bytes, compression_table)
+    # Substitution
+    expanded_bytes = _substitution(expanded_bytes, substitution_table)
+
+    compressed_bytes = _permutation(expanded_bytes, permutation_table)
 
     new_right_half = _xor(compressed_bytes, left_half)
 
     # Combine left and right
     return right_half + new_right_half
 
-def _expand_half(half: bytes, expansion_table) -> bytes:
+def _expansion(half: bytes, expansion_table) -> bytes:
     assert(len(half) == 4) # half should be 32 bits
 
-    # TODO: perform byte expansion according to table
-    expanded: bytes
+    expanded: bytes = _apply_table(half, expansion_table)
 
     assert(len(expanded) == 6) # expanded should be 48 bits
     return expanded
 
-def _permuted_choice(expanded_half: bytes, compression_table) -> bytes:
+def _substitution(expanded_half: bytes, substitution_table: List[List[int]]) -> bytes:
+    # TODO: Implement substitution table
+    pass
+
+def _permutation(expanded_half: bytes, permutation_table) -> bytes:
     assert(len(expanded_half) == 6) # expanded should be 48 bits
 
-    # TODO: perform permuted choice to reduce the 48 bit block to 32 bits
+    permuted = _apply_table(expanded_half, permutation_table)
 
     assert(len(expanded_half) == 4) # half should be 32 bits
-    pass
+    return permuted
 
 
 if __name__ == "__main__":
