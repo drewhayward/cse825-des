@@ -5,7 +5,11 @@ BYTE_ORDER = 'big'
 NUM_CYCLES = 16
 # TODO: Define expansion/permutation tables in file and load here
 
+def _bytes_to_binary_str(b: bytes) -> str:
+    return bin(int.from_bytes(b, 'big'))[2:].zfill(len(b) * 8)
 
+def _binary_str_to_bytes(s: str) -> bytes:
+    int(s, 2).to_bytes(len(s) // 8, 'big')
 
 def _xor(b1: bytes, b2: bytes) -> bytes:
     assert(len(b1) == len(b2))
@@ -22,20 +26,19 @@ def _left_cycle(b: bytes, shifts: int) -> bytes:
     
     return (((num << shifts) + (num >> (num_bits - shifts))) % (2 ** num_bits)).to_bytes(num_bits // 8, byteorder='big')
 
-def _apply_table(b: bytes, table: List[int]):
-    num_bits = len(b) * 8
+def _apply_table(b: bytes, table: List[int]) -> bytes:
     # convert bytes to binary string
-    binary_string = bin(int.from_bytes(b, 'big'))[2:].zfill(num_bits)
+    binary_string = _bytes_to_binary_str(b)
 
     # build new binary string
-    output = 'x' * len(table)
+    output = ['x'] * len(table)
     for pos, src in enumerate(table):
         output[pos] = binary_string[src]
 
     assert('x' not in output)
 
     # convert to bytes
-    return int(output, 2).to_bytes(len(output) // 8, 'big')
+    return _binary_str_to_bytes(''.join(output))
 
 
 def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
@@ -57,7 +60,7 @@ def _create_keys(key: bytes) -> List[bytes]:
     left_halves: List[bytes] = [ None ] * (NUM_CYCLES + 1)
     right_halves: List[bytes] = [ None ] * (NUM_CYCLES + 1)
 
-    binary_key = bin(int.from_bytes(key, 'big'))[2:].zfill(len(key) * 8)
+    binary_key = _bytes_to_binary_str(key)
     
     left_halves[0] = binary_key[:(len(binary_key) // 2)]
     right_halves[0] = key[(len(binary_key) // 2):]
