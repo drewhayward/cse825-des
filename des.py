@@ -3,6 +3,7 @@ import math
 
 BYTE_ORDER = 'big'
 NUM_CYCLES = 16
+BLOCK_SIZE = 8
 # TODO: Define expansion/permutation tables in file and load here
 
 def _bytes_to_binary_str(b: bytes) -> str:
@@ -42,11 +43,31 @@ def _apply_table(b: bytes, table: List[int]) -> bytes:
 
 
 def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
+    # Create subkeys through key expansion
+    # keys: List[bytes] = _create_keys(key)
+
     # Break plaintext into blocks and pad last block if necessary
+    blocks: List[bytes] = []
+    for i in range((len(plaintext_bytes) // BLOCK_SIZE) + 1):
+        start = i * BLOCK_SIZE
+        end = start + BLOCK_SIZE
+        if end < len(plaintext_bytes):
+            blocks.append(plaintext_bytes[start:end])
+        else:
+            # Need to pad last block
+            padding_length = end - len(plaintext_bytes)
+            if padding_length == BLOCK_SIZE:
+                break
+            blocks.append(
+                plaintext_bytes[start:end] + bytes([0] * padding_length))
+
+
     # encrypt each block
+    ciphertext: bytes = bytes()
+    for block in blocks:
+        _encrypt_block(block, keys)
 
     # concate encrypted blocks and return result
-    ciphertext: bytes
     return ciphertext
 
 # DES encryption is it's own inverse ?
@@ -71,13 +92,10 @@ def _create_keys(key: bytes) -> List[bytes]:
         right_halves[pos] = _left_cycle(right_halves[pos - 1], shift)
     pass
 
-def _encrypt_block(block: bytes, key: bytes) -> bytes:
+def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
     # TODO: Finish
     assert(len(block) == 8) # block should be 8 bytes/64 bits
     assert(len(key) == 8) # block should be 8 bytes/64 bits
-
-    # Create subkeys through key expansion
-    keys: List[bytes] = _create_keys(key)
 
     # Perform initial permutation of message data
 
@@ -93,7 +111,7 @@ def _encrypt_block(block: bytes, key: bytes) -> bytes:
 
 
 
-def _des_round(block: bytes, key: bytes, substitution_table: List[List[int]]) -> bytes:
+def _des_round(block: bytes, key: bytes) -> bytes:
     assert(len(block) == 8) # block should be 8 bytes/64 bits
     assert(len(key) == 6) # block should be 6 bytes/56 bits
 
@@ -106,7 +124,7 @@ def _des_round(block: bytes, key: bytes, substitution_table: List[List[int]]) ->
 
     expanded_bytes = _xor(expanded_bytes, key)
 
-    compressed_bytes = _substitution(expanded_bytes, substitution_table)
+    compressed_bytes = _substitution(expanded_bytes)
 
     compressed_bytes = _permutation(compressed_bytes)
 
