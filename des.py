@@ -16,16 +16,16 @@ def _xor(b1: bytes, b2: bytes) -> bytes:
     assert(len(b1) == len(b2))
     return bytes([a ^ b for a, b in zip(b1, b2)])
 
-def _left_cycle(b: bytes, shifts: int) -> bytes:
+def _left_cycle(b: bytes, shifts: int, num_bits: int) -> bytes:
     """
     Left cycles the bits of b
     ex: f(0010, 2) -> 1000
         f(0100, 2) -> 0001 
     """
-    num = int.from_bytes(b, 'big')
-    num_bits = len(b) * 8
+    #num = int.from_bytes(b, 'big')
+    #num_bits = len(b) * 8
     
-    return (((num << shifts) + (num >> (num_bits - shifts))) % (2 ** num_bits)).to_bytes(num_bits // 8, byteorder='big')
+    return (((b << shifts) + (b >> (num_bits - shifts))) % (2 ** num_bits))
 
 def _apply_table(b: bytes, table: List[int]) -> bytes:
     # convert bytes to binary string
@@ -65,37 +65,92 @@ def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
     # encrypt each block
     ciphertext: bytes = bytes()
     for block in blocks:
-        _encrypt_block(block, keys)
+        _encrypt_block(block, key)
 
     # concate encrypted blocks and return result
     return ciphertext
 
 # DES encryption is it's own inverse ?
 # I think we have to reverse the key order though
-decrypt = encrypt 
+decrypt = encrypt
 
 def _create_keys(key: bytes) -> List[bytes]:
     # TODO: Create subkeys from key
+    pc_table = [57, 49, 41, 33, 25, 17, 9,
+                1, 58, 50, 42, 34, 26, 18,
+                10, 2, 59, 51, 43, 35, 27,
+                19, 11, 3, 60, 52, 44, 36,
+                63, 55, 47, 39, 31, 23, 15,
+                7, 62, 54, 46, 38, 30, 22,
+                14, 6, 61, 53, 45, 37, 29,
+                21, 13, 5, 28, 20, 12, 4]
+
+    pc_2 = [14,17,11,24,1,5,
+            3,28,15,6,21,10,
+            23,19,12,4,26,8,
+            16,7,27,20,13,2,
+            41,52,31,37,47,55,
+            30,40,51,45,33,48,
+            44,49,39,56,34,53,
+            46,42,50,36,29,32]
+    zero = 1 << 63  # creates a bit array with zeros
+    k_plus = 0 << 55  # the bit array where the new key will be
+    num = int.from_bytes(key, 'big')  # turns current key to integer
+
+    # does the shifting
+    for val in pc_table:
+        placement = 55 - pc_table.index(val)
+        nth_place = zero >> (val - 1)
+        if (num & nth_place) > 0:
+            bit_nth_place = 1 << placement
+            k_plus = k_plus | bit_nth_place
+        zero = 1 << 63
+
     num_shifts = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
 
-    left_halves: List[bytes] = [ None ] * (NUM_CYCLES + 1)
-    right_halves: List[bytes] = [ None ] * (NUM_CYCLES + 1)
+    left_halves: List[bytes] = [None] * (NUM_CYCLES + 1)
+    right_halves: List[bytes] = [None] * (NUM_CYCLES + 1)
 
-    binary_key = _bytes_to_binary_str(key)
-    
-    left_halves[0] = binary_key[:(len(binary_key) // 2)]
-    right_halves[0] = key[(len(binary_key) // 2):]
+    c_zero = k_plus >> 28
+    d_zero = (k_plus & 268435455)
+
+    left_halves[0] = c_zero
+    right_halves[0] = d_zero
 
     for i, shift in enumerate(num_shifts):
-        pos = i + 1 # Don't shift first position
-        left_halves[pos] = _left_cycle(left_halves[pos - 1], shift)
-        right_halves[pos] = _left_cycle(right_halves[pos - 1], shift)
+        pos = i + 1  # Don't shift first position
+        left_halves[pos] = _left_cycle(left_halves[pos - 1], shift,28)
+        right_halves[pos] = _left_cycle(right_halves[pos - 1], shift, 28)
     pass
+
+    #concatenate left half and right  half together
+    k_n = []
+    for i in range(len(right_halves)):
+        k1 = left_halves[i] << 28
+        k1 = k1 | right_halves[i]
+        k_n.append(k1)
+
+    final_sub_key = []      #list will contain all final subkeys
+    for k in k_n:
+        zero = 1 << 55  # creates a bit array with zeros
+        subk = 0 << 47  # the bit array where the new key will be
+        for val in pc_2:
+            placement = 47 - pc_2.index(val)
+            nth_place = zero >> (val - 1)
+            if (k & nth_place) > 0:
+                bit_nth_place = 1 << placement
+                subk = subk | bit_nth_place
+            zero = 1 << 55
+        final_sub_key.append(subk)
+
+    #converts sub keys to binary strings
+    for i in range(len(final_sub_key)):
+       final_sub_key[i]= bin(final_sub_key[i])[2:].zfill(48)
 
 def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
     # TODO: Finish
     assert(len(block) == 8) # block should be 8 bytes/64 bits
-    assert(len(key) == 8) # block should be 8 bytes/64 bits
+    assert(len(keys) == 8) # block should be 8 bytes/64 bits
 
     # Perform initial permutation of message data
 
@@ -158,7 +213,9 @@ def _permutation(expanded_half: bytes) -> bytes:
 
 if __name__ == "__main__":
     plaintext = bytes.fromhex('abcd1234')
-    key = bytes.fromhex('1234abcd')
+    key = bytes.fromhex('133457799BBCDFF1')
+
+    key_temp = _create_keys(key)
 
     ciphertext = encrypt(plaintext, key)
     decrypted = decrypt(ciphertext, key)
