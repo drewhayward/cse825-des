@@ -112,7 +112,7 @@ def _create_keys(key: bytes) -> List[bytes]:
     right_halves: List[bytes] = [None] * (NUM_CYCLES + 1)
 
     c_zero = k_plus >> 28
-    d_zero = (k_plus & 268435455)
+    d_zero = (k_plus & 268435455) # the 268435455 is a binary string of 28 1s
 
     left_halves[0] = c_zero
     right_halves[0] = d_zero
