@@ -44,7 +44,7 @@ def _apply_table(b: bytes, table: List[int]) -> bytes:
 
 def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
     # Create subkeys through key expansion
-    # keys: List[bytes] = _create_keys(key)
+    keys: List[bytes] = _create_keys(key)
 
     # Break plaintext into blocks and pad last block if necessary
     blocks: List[bytes] = []
@@ -121,11 +121,10 @@ def _create_keys(key: bytes) -> List[bytes]:
         pos = i + 1  # Don't shift first position
         left_halves[pos] = _left_cycle(left_halves[pos - 1], shift,28)
         right_halves[pos] = _left_cycle(right_halves[pos - 1], shift, 28)
-    pass
 
     #concatenate left half and right  half together
     k_n = []
-    for i in range(len(right_halves)):
+    for i in range(1, len(right_halves)):
         k1 = left_halves[i] << 28
         k1 = k1 | right_halves[i]
         k_n.append(k1)
@@ -146,6 +145,8 @@ def _create_keys(key: bytes) -> List[bytes]:
     #converts sub keys to binary strings
     for i in range(len(final_sub_key)):
        final_sub_key[i]= bin(final_sub_key[i])[2:].zfill(48)
+
+    return final_sub_key
 
 def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
     # TODO: Finish
