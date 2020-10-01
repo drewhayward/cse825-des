@@ -41,38 +41,54 @@ def _apply_table(b: bytes, table: List[int]) -> bytes:
     # convert to bytes
     return _binary_str_to_bytes(''.join(output))
 
+def _chunkify_message(M: bytes) -> List[bytes]:
+    """
+    Breaks message bytes M into blocks and pads last block with 0s if necessary
+    """
+    blocks: List[bytes] = []
+    for i in range((len(M) // BLOCK_SIZE) + 1):
+        start = i * BLOCK_SIZE
+        end = start + BLOCK_SIZE
+        if end < len(M):
+            blocks.append(M[start:end])
+        else:
+            # Need to pad last block
+            padding_length = end - len(M)
+            if padding_length == BLOCK_SIZE:
+                break
+            blocks.append(
+                M[start:end] + bytes([0] * padding_length))
+    return blocks
 
 def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
     # Create subkeys through key expansion
     keys: List[bytes] = _create_keys(key)
 
-    # Break plaintext into blocks and pad last block if necessary
-    blocks: List[bytes] = []
-    for i in range((len(plaintext_bytes) // BLOCK_SIZE) + 1):
-        start = i * BLOCK_SIZE
-        end = start + BLOCK_SIZE
-        if end < len(plaintext_bytes):
-            blocks.append(plaintext_bytes[start:end])
-        else:
-            # Need to pad last block
-            padding_length = end - len(plaintext_bytes)
-            if padding_length == BLOCK_SIZE:
-                break
-            blocks.append(
-                plaintext_bytes[start:end] + bytes([0] * padding_length))
-
+    blocks: List[bytes] = _chunkify_message(plaintext_bytes)
 
     # encrypt each block
     ciphertext: bytes = bytes()
     for block in blocks:
-        _encrypt_block(block, key)
+        ciphertext += _encrypt_block(block, keys)
 
     # concate encrypted blocks and return result
     return ciphertext
 
-# DES encryption is it's own inverse ?
-# I think we have to reverse the key order though
-decrypt = encrypt
+def decrypt(ciphertext_bytes: bytes, key: bytes) -> bytes:
+    # Create subkeys through key expansion
+    keys: List[bytes] = _create_keys(key)
+    keys.reverse() # reverse keys for decryption
+
+    # Break plaintext into blocks and pad last block if necessary
+    blocks: List[bytes] = _chunkify_message(ciphertext_bytes)
+
+    # encrypt each block
+    plaintext: bytes = bytes()
+    for block in blocks:
+        plaintext += _encrypt_block(block, keys)
+
+    # concate encrypted blocks and return result
+    return plaintext
 
 def _create_keys(key: bytes) -> List[bytes]:
     # TODO: Create subkeys from key
