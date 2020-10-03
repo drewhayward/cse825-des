@@ -5,16 +5,38 @@ BYTE_ORDER = 'big'
 NUM_CYCLES = 16
 BLOCK_SIZE = 8
 # TODO: Define expansion/permutation tables in file and load here
+#Initial Permutation
+initPerm = [58,50,42,34,26,18,10,2,60,52,44,36,28,20,12,4,62,54,46,
+            38,30,22,14,6,64,56,48,40,32,24,16,8,57,49,41,33,25,17,
+            9,1,59,51,43,35,27,19,11,3,61,53,45,37,29,21,13,5,63,55,
+            47,39,31,23,15,7]
+#Expands the bits
+expandBit = [32,1,2,3,4,5,4,5,6,7,8,9,8,9,10,11,12,13,12,13,14,15,
+             16,17,16,17,18,19,20,21,20,21,22,23,24,25,24,25,26,27,
+             28,29,28,29,30,31,32,1]
+#S1 matrix
+S1Mat = [
+         [14,4,13,1,2,15,11,8,3,10,6,12,5,9,0,7],
+         [0,15,7,4,14,2,13,1,10,6,12,11,9,5,3,8],
+         [4,1,14,8,13,6,2,11,15,12,9,7,3,10,5,0],
+         [15,12,8,2,4,9,1,7,5,11,3,14,10,0,6,13]
+        ]
+#F Permutation
+fPerm = [16,7,20,21,29,12,28,17,1,15,23,26,5,18,31,10,2,8,24,14,
+           32,27,3,9,19,13,30,6,22,11,4,25]
 
 def _bytes_to_binary_str(b: bytes) -> str:
     return bin(int.from_bytes(b, 'big'))[2:].zfill(len(b) * 8)
 
 def _binary_str_to_bytes(s: str) -> bytes:
-    int(s, 2).to_bytes(len(s) // 8, 'big')
+    return int(s, 2).to_bytes(len(s) // 8, 'big')
 
 def _xor(b1: bytes, b2: bytes) -> bytes:
-    assert(len(b1) == len(b2))
-    return bytes([a ^ b for a, b in zip(b1, b2)])
+    b1Binary = _bytes_to_binary_str(b1)
+    b2Binary = _bytes_to_binary_str(b2)
+    assert(len(b1Binary) == len(b2Binary))
+    b3 = ''.join('0' if i == j else '1' for i,j in zip(b1Binary, b2Binary))
+    return (b3)
 
 def _left_cycle(b: bytes, shifts: int, num_bits: int) -> bytes:
     """
@@ -34,7 +56,7 @@ def _apply_table(b: bytes, table: List[int]) -> bytes:
     # build new binary string
     output = ['x'] * len(table)
     for pos, src in enumerate(table):
-        output[pos] = binary_string[src]
+        output[pos] = binary_string[src-1]
 
     assert('x' not in output)
 
@@ -65,9 +87,9 @@ def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
     keys: List[bytes] = _create_keys(key)
 
     blocks: List[bytes] = _chunkify_message(plaintext_bytes)
-
     # encrypt each block
     ciphertext: bytes = bytes()
+    
     for block in blocks:
         ciphertext += _encrypt_block(block, keys)
 
@@ -164,47 +186,68 @@ def _create_keys(key: bytes) -> List[bytes]:
 
     return final_sub_key
 
+
+'''
+Encrypts the block of data using all the generated keys.
+'''
 def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
     # TODO: Finish
-    assert(len(block) == 8) # block should be 8 bytes/64 bits
-    assert(len(keys) == 8) # block should be 8 bytes/64 bits
+    assert(len(block) == BLOCK_SIZE) # block should be 8 bytes/64 bits
+    assert(len(keys) == NUM_CYCLES) # Should have 16 keys.
 
     # Perform initial permutation of message data
+    #Get the block into binary then permute.
+    mBin =  _bytes_to_binary_str(block)
+    ipBin = ''
+    for bit in initPerm:
+        ipBin += mBin[bit - 1]
 
     # Cycle the block 16 times with the appropriate key-table combinations
-    cipher_block = None
+    cipher_block = _binary_str_to_bytes(ipBin) #Get it back into Bytes
     for key in keys:
-        # cipher_block = _des_round(cipher_block, key, )
-        pass
+        cipher_block = _des_round(cipher_block, key)
 
     # Perform final permutation
-
+    cBlockBin = _bytes_to_binary_str(cipher_block)
+    finBin = ''
+    for rBit in reversed(initPerm):
+        finBin += cBlockBin[rBit - 1]
+        
+    return _binary_str_to_bytes(finBin)
     # return encrypted block
 
 
-
+'''
+A single round of DES encryption
+'''
 def _des_round(block: bytes, key: bytes) -> bytes:
     assert(len(block) == 8) # block should be 8 bytes/64 bits
-    assert(len(key) == 6) # block should be 6 bytes/56 bits
+    assert(len(key) == 48) #Key should be 48 bits
 
     # Split Data in half
-    left_half: bytes = block[:(len(block)/2)]
-    right_half: bytes = block[(len(block)/2):]
+    left_half: bytes = block[:int((len(block)/2))]
+    right_half: bytes = block[int((len(block)/2)):]
 
     # Expand right half
     expanded_bytes = _expansion(right_half)
-
-    expanded_bytes = _xor(expanded_bytes, key)
-
+    #Get key into hex value
+    hexKey = _binary_str_to_bytes(key)
+    #Exclusive or with the key and the expanded bytes
+    expanded_bytes = _xor(expanded_bytes, hexKey)
+    #Substitute then convert to hex
     compressed_bytes = _substitution(expanded_bytes)
-
-    compressed_bytes = _permutation(compressed_bytes)
-
-    new_right_half = _xor(compressed_bytes, left_half)
-
+    compressed_hex = _binary_str_to_bytes(compressed_bytes)
+    #Permute the compressed value
+    compPerm_bytes = _permutation(compressed_hex)
+    #Exclusive or with the compressed and permuted half with the left half then convert to hex
+    new_right_half = _xor(compPerm_bytes, left_half)
+    newRightHex = _binary_str_to_bytes(new_right_half)
     # Combine left and right
-    return right_half + new_right_half
+    return right_half + newRightHex
 
+'''
+Expand the half for DES
+'''
 def _expansion(half: bytes) -> bytes:
     assert(len(half) == 4) # half should be 32 bits
     expansion_table = [32,1,2,3,4,5,4,5,6,7,8,9,8,9,10,11,12,13,12,13,14,15,16,17,16,17,18,19,20,21,20,21,22,23,24,25,24,25,26,27,28,29,28,29,30,31,32,1]
@@ -214,22 +257,57 @@ def _expansion(half: bytes) -> bytes:
     assert(len(expanded) == 6) # expanded should be 48 bits
     return expanded
 
-def _substitution(expanded_half: bytes, substitution_table: List[List[int]]) -> bytes:
-    # TODO: Implement substitution table
-    pass
 
-def _permutation(expanded_half: bytes) -> bytes:
-    assert(len(expanded_half) == 6) # expanded should be 48 bits
+'''
+Use substitution on the expanded half
+'''
+def _substitution(expanded_half: bytes) -> bytes:
+    # TODO: Implement substitution table
+    #Use the S1Mat for the Substitution matrix
+    totalCount = int(len(expanded_half) / 6)
+    bitStr = ''
+
+    #Need to look at every 6 bits. The oth and 5th bit of a group, then the 1st through 4th bits for the inner.
+    for i in range(totalCount):
+        a = i*6
+        aBit = expanded_half[a]
+        b = i*6 + 5
+        bBit = expanded_half[b]
+        cStr = ''
+
+        for j in range(4):
+            k = i*6 + 1 + j
+            cStr += expanded_half[k]
+
+        iNum = int((aBit + bBit), 2)
+        jNum = int(cStr, 2)
+        SNum = bin(S1Mat[iNum][jNum])[2:]
+
+        while(len(SNum)<4):
+            SNum = '0' + SNum
+
+        bitStr += SNum
+
+    return bitStr
+
+
+'''
+Uses the permutation table on the compressed half.
+'''
+def _permutation(compressed_bytes: bytes) -> bytes:
+    assert(len(compressed_bytes) == 4) # expanded should be 32 bits
     permutation_table = [16,7,20,21,29,12,28,17,1,15,23,26,5,18,31,10,2,8,24,14,32,27,3,9,19,13,30,6,22,11,4,25]
 
-    permuted = _apply_table(expanded_half, permutation_table)
+    permuted = _apply_table(compressed_bytes, permutation_table)
 
-    assert(len(expanded_half) == 4) # half should be 32 bits
+    assert(len(compressed_bytes) == 4) # half should be 32 bits
     return permuted
 
 
 if __name__ == "__main__":
+    print("Adding line to break at...")
     plaintext = bytes.fromhex('abcd1234')
+    print(plaintext.hex())
     key = bytes.fromhex('133457799BBCDFF1')
 
     key_temp = _create_keys(key)
