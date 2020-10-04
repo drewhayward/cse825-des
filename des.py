@@ -111,24 +111,38 @@ def _left_cycle(b: int, shifts: int, num_bits: int) -> int:
     return (((b << shifts) + (b >> (num_bits - shifts))) % (2 ** num_bits))
 
 
-def _apply_table(b: bytes, table: List[int]) -> bytes:
-    num_input_bits = len(b) * 8
-    num_output_bits = len(table)
-    input_num = int.from_bytes(b, 'big')
-    output = 0
+# def _apply_table(b: bytes, table: List[int]) -> bytes:
+#     num_input_bits = len(b) * 8
+#     num_output_bits = len(table)
+#     input_num = int.from_bytes(b, 'big')
+#     output = 0
 
-    full_mask = ((2 ** (num_output_bits)) - 1)
-    for pos, src in enumerate(table):
-        # Create output mask
-        output_mask = full_mask ^ (1 << (num_output_bits - pos - 1))
-        new_bit = ((input_num >> (num_input_bits - (src - 1) - 1)) & 1) << (num_output_bits - pos - 1)
+#     full_mask = ((2 ** (num_output_bits)) - 1)
+#     for pos, src in enumerate(table):
+#         # Create output mask
+#         output_mask = full_mask ^ (1 << (num_output_bits - pos - 1))
+#         new_bit = ((input_num >> (num_input_bits - (src - 1) - 1)) & 1) << (num_output_bits - pos - 1)
         
-        # add new bit to output
-        output = (output & output_mask) + new_bit
+#         # add new bit to output
+#         output = (output & output_mask) + new_bit
 
+
+#     # convert to bytes
+#     return output.to_bytes(num_output_bits // 8, 'big')
+
+def _apply_table(b: bytes, table: List[int]) -> bytes:
+    # convert bytes to binary string
+    binary_string = _bytes_to_binary_str(b)
+
+    # build new binary string
+    output = ['x'] * len(table)
+    for pos, src in enumerate(table):
+        output[pos] = binary_string[src-1]
+
+    assert('x' not in output)
 
     # convert to bytes
-    return output.to_bytes(num_output_bits // 8, 'big')
+    return _binary_str_to_bytes(''.join(output))
 
 
 def _chunkify_message(M: bytes) -> List[bytes]:
