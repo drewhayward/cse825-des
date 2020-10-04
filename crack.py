@@ -5,6 +5,7 @@ from typing import Dict
 import math
 import utils
 import des
+from tqdm import tqdm
 
 
 def build_ngrams():
@@ -66,6 +67,7 @@ def score_plaintext_abs(plaintext: str) -> float:
 
 if __name__ == "__main__":
     plaintext = "Did you ever hear the Tragedy of Darth Plagueis the wise? I thought not. It's not a story the Jedi would tell you. It's a Sith legend. Darth Plagueis was a Dark Lord of the Sith, so powerful and so wise he could use the Force to influence the midichlorians to create life... He had such a knowledge of the dark side that he could even keep the ones he cared about from dying. The dark side of the Force is a pathway to many abilities some consider to be unnatural. He became so powerful... the only thing he was afraid of was losing his power, which eventually, of course, he did. Unfortunately, he taught his apprentice everything he knew, then his apprentice killed him in his sleep. It's ironic he could save others from death, but not himself."
+    #plaintext = "what is going on?"
     plaintext_bytes = utils.ascii_to_bytes(plaintext)
     key = bytes.fromhex('133457799BBCDFF1')
     ciphertext = des.encrypt(plaintext_bytes, key)
@@ -73,7 +75,7 @@ if __name__ == "__main__":
     partial_key = bytes.fromhex('133457799BBCDF')
     best = ''
     best_score = -10000.0
-    for i in range(256):
+    for i in tqdm(range(256)):
         test_key = partial_key + bytes([i])
         decrypted = utils.bytes_to_ascii(des.decrypt(ciphertext, test_key))
         score = score_plaintext_logprob(decrypted)
