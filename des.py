@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 import math
 
 BYTE_ORDER = 'big'
@@ -98,10 +98,10 @@ def _xor(b1: bytes, b2: bytes) -> bytes:
     b2Binary = _bytes_to_binary_str(b2)
     assert(len(b1Binary) == len(b2Binary))
     b3 = ''.join('0' if i == j else '1' for i, j in zip(b1Binary, b2Binary))
-    return (b3)
+    return _binary_str_to_bytes(b3)
 
 
-def _left_cycle(b: bytes, shifts: int, num_bits: int) -> bytes:
+def _left_cycle(b: int, shifts: int, num_bits: int) -> int:
     """
     Left cycles the bits of b
     ex: f(0010, 2) -> 1000
@@ -214,8 +214,8 @@ def _create_keys(key: bytes) -> List[bytes]:
 
     num_shifts = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
 
-    left_halves: List[bytes] = [None] * (NUM_CYCLES + 1)
-    right_halves: List[bytes] = [None] * (NUM_CYCLES + 1)
+    left_halves: List[int] = [-1] * (NUM_CYCLES + 1)
+    right_halves: List[int] = [-1] * (NUM_CYCLES + 1)
 
     c_zero = k_plus >> 28
     d_zero = (k_plus & 268435455)  # the 268435455 is a binary string of 28 1s
@@ -246,19 +246,15 @@ def _create_keys(key: bytes) -> List[bytes]:
                 bit_nth_place = 1 << placement
                 subk = subk | bit_nth_place
             zero = 1 << 55
-        final_sub_key.append(subk)
-
-    # converts sub keys to binary strings
-    for i in range(len(final_sub_key)):
-        final_sub_key[i] = bin(final_sub_key[i])[2:].zfill(48)
+        final_sub_key.append(subk.to_bytes(6, 'big'))
 
     return final_sub_key
 
 
-'''
-Encrypts the block of data using all the generated keys.
-'''
 def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
+    '''
+    Encrypts the block of data using all the generated keys.
+    '''
     assert(len(block) == BLOCK_SIZE)  # block should be 8 bytes/64 bits
     assert(len(keys) == NUM_CYCLES)  # Should have 16 keys.
 
@@ -281,14 +277,12 @@ def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
     return cipher_block
 
 
-'''
-A single round of DES encryption
-'''
-
-
 def _des_round(block: bytes, key: bytes) -> bytes:
+    '''
+    A single round of DES encryption
+    '''
     assert(len(block) == 8)  # block should be 8 bytes/64 bits
-    assert(len(key) == 48)  # Key should be 48 bits
+    assert(len(key) == 6)  # Key should be 48 bits
 
     # Split Data in half
     left_half: bytes = block[:int((len(block)/2))]
@@ -296,10 +290,8 @@ def _des_round(block: bytes, key: bytes) -> bytes:
 
     # Expand right half
     expanded_bytes = _expansion(right_half)
-    # Get key into hex value
-    hexKey = _binary_str_to_bytes(key)
     # Exclusive or with the key and the expanded bytes
-    expanded_bytes = _xor(expanded_bytes, hexKey)
+    expanded_bytes = _xor(expanded_bytes, key)
     # Substitute then convert to hex
     compressed_bytes = _substitution(expanded_bytes)
     compressed_hex = _binary_str_to_bytes(compressed_bytes)
@@ -307,17 +299,15 @@ def _des_round(block: bytes, key: bytes) -> bytes:
     compPerm_bytes = _permutation(compressed_hex)
     # Exclusive or with the compressed and permuted half with the left half then convert to hex
     new_right_half = _xor(compPerm_bytes, left_half)
-    newRightHex = _binary_str_to_bytes(new_right_half)
     # Combine left and right
-    return right_half + newRightHex
+    return right_half + new_right_half
 
-
-'''
-Expand the half for DES
-'''
 
 
 def _expansion(half: bytes) -> bytes:
+    '''
+    Expand the half for DES
+    '''
     assert(len(half) == 4)  # half should be 32 bits
     expansion_table = [32, 1, 2, 3, 4, 5, 4, 5, 6, 7, 8, 9, 8, 9, 10, 11, 12, 13, 12, 13, 14, 15, 16,
                        17, 16, 17, 18, 19, 20, 21, 20, 21, 22, 23, 24, 25, 24, 25, 26, 27, 28, 29, 28, 29, 30, 31, 32, 1]
@@ -328,24 +318,23 @@ def _expansion(half: bytes) -> bytes:
     return expanded
 
 
-'''
-Use substitution on the expanded half
-'''
-
-
 def _substitution(expanded_half: bytes) -> str:
+    '''
+    Use substitution on the expanded half
+    '''
     # TODO: Implement substitution table
     # Use the S1Mat for the Substitution matrix
-    totalCount = len(expanded_half) // 6
+    binary_string = _bytes_to_binary_str(expanded_half)
+    totalCount = len(binary_string) // 6
     bitStr = ''
 
     # Need to look at every 6 bits. The oth and 5th bit of a group, then the 1st through 4th bits for the inner.
     for i in range(totalCount):
         a = i*6
-        aBit = expanded_half[a]
+        aBit = binary_string[a]
         b = i*6 + 5
-        bBit = expanded_half[b]
-        cStr = expanded_half[a+1:b]
+        bBit = binary_string[b]
+        cStr = binary_string[a+1:b]
 
         iNum = int((aBit + bBit), 2)
         jNum = int(cStr, 2)
@@ -359,12 +348,10 @@ def _substitution(expanded_half: bytes) -> str:
     return bitStr
 
 
-'''
-Uses the permutation table on the compressed half.
-'''
-
-
 def _permutation(compressed_bytes: bytes) -> bytes:
+    '''
+    Uses the permutation table on the compressed half.
+    '''
     assert(len(compressed_bytes) == 4)  # expanded should be 32 bits
     permutation_table = [16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5,
                          18, 31, 10, 2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25]
@@ -374,10 +361,21 @@ def _permutation(compressed_bytes: bytes) -> bytes:
     assert(len(compressed_bytes) == 4)  # half should be 32 bits
     return permuted
 
+def ascii_to_bytes(s: str) -> bytes:
+    return bytes([ord(char) for char in s])
+
+def bytes_to_ascii(b: bytes) -> str:
+    return ''.join([chr(i) for i in b])
 
 if __name__ == "__main__":
-    plaintext = bytes.fromhex('0123456789ABCDEF')
+    plaintext = input('Enter your message: ')
     key = bytes.fromhex('133457799BBCDFF1')
-    ciphertext = bytes.fromhex('85E813540F0AB405')
+    print(f'Using {key.hex()} for a key')
 
-    assert(encrypt(plaintext, key) == ciphertext)
+    plaintext_bytes = ascii_to_bytes(plaintext)
+    ciphertext = encrypt(plaintext_bytes, key)
+    print('Your ciphertext is:')
+    print(ciphertext.hex())
+
+    print('Your decrypted ciphertext is')
+    print(bytes_to_ascii(decrypt(ciphertext, key)))
