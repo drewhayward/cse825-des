@@ -95,11 +95,8 @@ def _binary_str_to_bytes(s: str) -> bytes:
 
 
 def _xor(b1: bytes, b2: bytes) -> bytes:
-    b1Binary = _bytes_to_binary_str(b1)
-    b2Binary = _bytes_to_binary_str(b2)
-    assert(len(b1Binary) == len(b2Binary))
-    b3 = ''.join('0' if i == j else '1' for i, j in zip(b1Binary, b2Binary))
-    return _binary_str_to_bytes(b3)
+    assert(len(b1) == len(b2))
+    return (int.from_bytes(b1, 'big') ^ int.from_bytes(b2, 'big')).to_bytes(len(b1), 'big')
 
 
 def _left_cycle(b: int, shifts: int, num_bits: int) -> int:
