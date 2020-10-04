@@ -1,4 +1,5 @@
 from typing import List, Optional
+from utils import ascii_to_bytes, bytes_to_ascii
 import math
 
 BYTE_ORDER = 'big'
@@ -360,12 +361,6 @@ def _permutation(compressed_bytes: bytes) -> bytes:
 
     assert(len(compressed_bytes) == 4)  # half should be 32 bits
     return permuted
-
-def ascii_to_bytes(s: str) -> bytes:
-    return bytes([ord(char) for char in s])
-
-def bytes_to_ascii(b: bytes) -> str:
-    return ''.join([chr(i) for i in b])
 
 if __name__ == "__main__":
     plaintext = input('Enter your message: ')
