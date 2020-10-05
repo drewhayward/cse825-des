@@ -166,6 +166,8 @@ def _chunkify_message(M: bytes) -> List[bytes]:
 
 
 def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
+    if len(key) != 8:
+        raise Exception('Incorrect key length')
     # Create subkeys through key expansion
     keys: List[bytes] = _create_keys(key)
 
@@ -181,6 +183,8 @@ def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
 
 
 def decrypt(ciphertext_bytes: bytes, key: bytes) -> bytes:
+    if len(key) != 8:
+        raise Exception('Incorrect key length')
     # Create subkeys through key expansion
     keys: List[bytes] = _create_keys(key)
     keys.reverse()  # reverse keys for decryption
