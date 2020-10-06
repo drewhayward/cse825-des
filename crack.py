@@ -6,6 +6,8 @@ import math
 import utils
 import des
 from tqdm import tqdm
+import multiprocessing
+import time
 
 
 def build_ngrams():
@@ -65,22 +67,57 @@ def score_plaintext_abs(plaintext: str) -> float:
     
     return scores
 
-if __name__ == "__main__":
-    plaintext = "Did you ever hear the Tragedy of Darth Plagueis the wise? I thought not. It's not a story the Jedi would tell you. It's a Sith legend. Darth Plagueis was a Dark Lord of the Sith, so powerful and so wise he could use the Force to influence the midichlorians to create life... He had such a knowledge of the dark side that he could even keep the ones he cared about from dying. The dark side of the Force is a pathway to many abilities some consider to be unnatural. He became so powerful... the only thing he was afraid of was losing his power, which eventually, of course, he did. Unfortunately, he taught his apprentice everything he knew, then his apprentice killed him in his sleep. It's ironic he could save others from death, but not himself."
-    #plaintext = "what is going on?"
-    plaintext_bytes = utils.ascii_to_bytes(plaintext)
-    key = bytes.fromhex('133457799BBCDFF1')
-    ciphertext = des.encrypt(plaintext_bytes, key)
-
-    partial_key = bytes.fromhex('133457799BBCDF')
+def parallel_crack(id, key_gen, ciphertext, range_size):
+    print(f'Starting up worker {id}')
     best = ''
     best_score = -10000.0
-    for i in tqdm(range(256)):
-        test_key = partial_key + bytes([i])
-        decrypted = utils.bytes_to_ascii(des.decrypt(ciphertext, test_key))
+    best_key = None
+    for key in tqdm(key_gen, total=range_size, position=id + 1):
+        decrypted = utils.bytes_to_ascii(des.decrypt(ciphertext, key))
         score = score_plaintext_logprob(decrypted)
         if score > best_score:
             best = decrypted
             best_score = score
+            best_key = key
+        # if (i % 10000) == 0:
+        #     print(f'worker {id} has tried {i} keys')
 
-    print('Decrypted: ', best, best_score)
+    print('Decrypted: ', best, best_score, best_key.hex())
+
+def get_generators(partial_key, num_generators):
+    bytes_to_generate = 8 - len(partial_key)
+    range_size = math.ceil((2 ** (bytes_to_generate * 8)) / num_generators)
+    def make_generator(range):
+        for num in range:
+            yield partial_key + num.to_bytes(bytes_to_generate, 'big')
+
+    ranges = []
+    start = 0
+    end = range_size
+    while len(ranges) != num_generators:
+        ranges.append(range(start, end))
+        start = end
+        end = end + min(range_size, (2 ** (bytes_to_generate * 8)))
+
+    return [make_generator(range) for range in ranges]
+
+if __name__ == "__main__":
+    start = time.time()
+    #plaintext = "Did you ever hear the Tragedy of Darth Plagueis the wise? I thought not. It's not a story the Jedi would tell you. It's a Sith legend. Darth Plagueis was a Dark Lord of the Sith, so powerful and so wise he could use the Force to influence the midichlorians to create life... He had such a knowledge of the dark side that he could even keep the ones he cared about from dying. The dark side of the Force is a pathway to many abilities some consider to be unnatural. He became so powerful... the only thing he was afraid of was losing his power, which eventually, of course, he did. Unfortunately, he taught his apprentice everything he knew, then his apprentice killed him in his sleep. It's ironic he could save others from death, but not himself."
+    #ciphertext = bytes.fromhex('bb0b0dea4c2e29c1eade96e2b4de3dc408d02730c59bbb16d16f08a51d148526')
+    ciphertext = bytes.fromhex('bb0b0dea4c2e29c1')
+    partial_key = bytes.fromhex('13345779')
+
+    NUM_WORKERS = 10
+    workers = []
+    key_gens = get_generators(partial_key, NUM_WORKERS)
+    range_size = math.ceil((2 ** ((8 - len(partial_key)) * 8)) / NUM_WORKERS)
+    for i, gen in enumerate(key_gens):
+        p = multiprocessing.Process(target=parallel_crack, args=(i, gen, ciphertext, range_size))
+        workers.append(p)
+        p.start()
+
+    for worker in workers:
+        worker.join()
+
+    print(f'That took {time.time() - start} seconds.')
