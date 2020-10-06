@@ -1,10 +1,11 @@
 from typing import List, Optional
 from utils import ascii_to_bytes, bytes_to_ascii
+from bitarray import bitarray
 import math
 
 BYTE_ORDER = 'big'
 NUM_CYCLES = 16
-BLOCK_SIZE = 8
+BLOCK_SIZE = 64
 # TODO: Define expansion/permutation tables in file and load here
 # Initial Permutation
 IP = [58, 50, 42, 34, 26, 18, 10, 2, 60, 52, 44, 36, 28, 20, 12, 4, 62, 54, 46,
@@ -81,6 +82,7 @@ S = [
         [2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11]
     ]
 ]
+
 # F Permutation
 fPerm = [16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10, 2, 8, 24, 14,
          32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25]
@@ -93,63 +95,46 @@ def _bytes_to_binary_str(b: bytes) -> str:
 def _binary_str_to_bytes(s: str) -> bytes:
     return int(s, 2).to_bytes(len(s) // 8, 'big')
 
+# Turn S values to bitarrays
+bitarray_S = []
+for S_mat in S:
+    mat = []
+    for row in S_mat:
+        new_row = []
+        for val in row:
+            new_row.append(bitarray(_bytes_to_binary_str(val.to_bytes(1, 'big'))[4:]))
+        mat.append(new_row)
+    bitarray_S.append(mat)
 
 def _xor(b1: bytes, b2: bytes) -> bytes:
     assert(len(b1) == len(b2))
     return (int.from_bytes(b1, 'big') ^ int.from_bytes(b2, 'big')).to_bytes(len(b1), 'big')
 
 
-def _left_cycle(b: int, shifts: int, num_bits: int) -> int:
+def _left_cycle(b: bitarray, shifts: int) -> int:
     """
     Left cycles the bits of b
     ex: f(0010, 2) -> 1000
         f(0100, 2) -> 0001 
     """
-    #num = int.from_bytes(b, 'big')
-    #num_bits = len(b) * 8
+    num_bits = len(b)
+    return b[shifts:] + b[:shifts]
 
-    return (((b << shifts) + (b >> (num_bits - shifts))) % (2 ** num_bits))
-
-
-# def _apply_table(b: bytes, table: List[int]) -> bytes:
-#     num_input_bits = len(b) * 8
-#     num_output_bits = len(table)
-#     input_num = int.from_bytes(b, 'big')
-#     output = 0
-
-#     full_mask = ((2 ** (num_output_bits)) - 1)
-#     for pos, src in enumerate(table):
-#         # Create output mask
-#         output_mask = full_mask ^ (1 << (num_output_bits - pos - 1))
-#         new_bit = ((input_num >> (num_input_bits - (src - 1) - 1)) & 1) << (num_output_bits - pos - 1)
-        
-#         # add new bit to output
-#         output = (output & output_mask) + new_bit
-
-
-#     # convert to bytes
-#     return output.to_bytes(num_output_bits // 8, 'big')
-
-def _apply_table(b: bytes, table: List[int]) -> bytes:
-    # convert bytes to binary string
-    binary_string = _bytes_to_binary_str(b)
-
+def _apply_table(b: bitarray, table: List[int]) -> bitarray:
     # build new binary string
-    output = ['x'] * len(table)
+    output = bitarray(len(table))
     for pos, src in enumerate(table):
-        output[pos] = binary_string[src-1]
-
-    assert('x' not in output)
+        output[pos] = b[src-1]
 
     # convert to bytes
-    return _binary_str_to_bytes(''.join(output))
+    return output
 
 
-def _chunkify_message(M: bytes) -> List[bytes]:
+def _chunkify_message(M: bitarray) -> List[bitarray]:
     """
     Breaks message bytes M into blocks and pads last block with 0s if necessary
     """
-    blocks: List[bytes] = []
+    blocks: List[bitarray] = []
     for i in range((len(M) // BLOCK_SIZE) + 1):
         start = i * BLOCK_SIZE
         end = start + BLOCK_SIZE
@@ -161,47 +146,52 @@ def _chunkify_message(M: bytes) -> List[bytes]:
             if padding_length == BLOCK_SIZE:
                 break
             blocks.append(
-                M[start:end] + bytes([0] * padding_length))
+                M[start:end] + bitarray([0] * padding_length))
     return blocks
 
 
 def encrypt(plaintext_bytes: bytes, key: bytes) -> bytes:
     if len(key) != 8:
         raise Exception('Incorrect key length')
-    # Create subkeys through key expansion
-    keys: List[bytes] = _create_keys(key)
 
-    blocks: List[bytes] = _chunkify_message(plaintext_bytes)
+    plaintext_bytes = bitarray(_bytes_to_binary_str(plaintext_bytes))
+    key = bitarray(_bytes_to_binary_str(key))
+    # Create subkeys through key expansion
+    keys: List[bitarray] = _create_keys(key)
+
+    blocks: List[bitarray] = _chunkify_message(plaintext_bytes)
     # encrypt each block
-    ciphertext: bytes = bytes()
+    ciphertext = bitarray()
 
     for block in blocks:
         ciphertext += _encrypt_block(block, keys)
 
     # concate encrypted blocks and return result
-    return ciphertext
+    return ciphertext.tobytes()
 
 
 def decrypt(ciphertext_bytes: bytes, key: bytes) -> bytes:
     if len(key) != 8:
         raise Exception('Incorrect key length')
+
+    ciphertext_bytes = bitarray(_bytes_to_binary_str(ciphertext_bytes))
+    key = bitarray(_bytes_to_binary_str(key))
     # Create subkeys through key expansion
-    keys: List[bytes] = _create_keys(key)
-    keys.reverse()  # reverse keys for decryption
+    keys: List[bitarray] = _create_keys(key)
+    keys.reverse()
 
-    # Break plaintext into blocks and pad last block if necessary
-    blocks: List[bytes] = _chunkify_message(ciphertext_bytes)
-
+    blocks: List[bitarray] = _chunkify_message(ciphertext_bytes)
     # encrypt each block
-    plaintext: bytes = bytes()
+    plaintext = bitarray()
+
     for block in blocks:
         plaintext += _encrypt_block(block, keys)
 
     # concate encrypted blocks and return result
-    return plaintext
+    return plaintext.tobytes()
 
 
-def _create_keys(key: bytes) -> List[bytes]:
+def _create_keys(key: bitarray) -> List[bitarray]:
     # TODO: Create subkeys from key
     pc_table = [57, 49, 41, 33, 25, 17, 9,
                 1, 58, 50, 42, 34, 26, 18,
@@ -220,59 +210,28 @@ def _create_keys(key: bytes) -> List[bytes]:
             30, 40, 51, 45, 33, 48,
             44, 49, 39, 56, 34, 53,
             46, 42, 50, 36, 29, 32]
-    zero = 1 << 63  # creates a bit array with zeros
-    k_plus = 0 << 55  # the bit array where the new key will be
-    num = int.from_bytes(key, 'big')  # turns current key to integer
-
-    # does the shifting
-    for val in pc_table:
-        placement = 55 - pc_table.index(val)
-        nth_place = zero >> (val - 1)
-        if (num & nth_place) > 0:
-            bit_nth_place = 1 << placement
-            k_plus = k_plus | bit_nth_place
-        zero = 1 << 63
+    
+    key = _apply_table(key, pc_table)
 
     num_shifts = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
 
-    left_halves: List[int] = [-1] * (NUM_CYCLES + 1)
-    right_halves: List[int] = [-1] * (NUM_CYCLES + 1)
+    left_halves: List[bitarray] = [bitarray()] * (NUM_CYCLES + 1)
+    right_halves: List[bitarray] = [bitarray()] * (NUM_CYCLES + 1)
 
-    c_zero = k_plus >> 28
-    d_zero = (k_plus & 268435455)  # the 268435455 is a binary string of 28 1s
-
-    left_halves[0] = c_zero
-    right_halves[0] = d_zero
+    left_halves[0] = key[:(len(key) // 2)]
+    right_halves[0] = key[(len(key) // 2):]
 
     for i, shift in enumerate(num_shifts):
         pos = i + 1  # Don't shift first position
-        left_halves[pos] = _left_cycle(left_halves[pos - 1], shift, 28)
-        right_halves[pos] = _left_cycle(right_halves[pos - 1], shift, 28)
+        left_halves[pos] = _left_cycle(left_halves[pos - 1], shift)
+        right_halves[pos] = _left_cycle(right_halves[pos - 1], shift)
 
-    # concatenate left half and right  half together
-    k_n = []
-    for i in range(1, len(right_halves)):
-        k1 = left_halves[i] << 28
-        k1 = k1 | right_halves[i]
-        k_n.append(k1)
+    keys = [_apply_table(left + right, pc_2) for left, right in zip(left_halves[1:], right_halves[1:])]
 
-    final_sub_key = []  # list will contain all final subkeys
-    for k in k_n:
-        zero = 1 << 55  # creates a bit array with zeros
-        subk = 0 << 47  # the bit array where the new key will be
-        for val in pc_2:
-            placement = 47 - pc_2.index(val)
-            nth_place = zero >> (val - 1)
-            if (k & nth_place) > 0:
-                bit_nth_place = 1 << placement
-                subk = subk | bit_nth_place
-            zero = 1 << 55
-        final_sub_key.append(subk.to_bytes(6, 'big'))
-
-    return final_sub_key
+    return keys
 
 
-def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
+def _encrypt_block(block: bitarray, keys: List[bitarray]) -> bitarray:
     '''
     Encrypts the block of data using all the generated keys.
     '''
@@ -289,8 +248,7 @@ def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
         cipher_block = _des_round(cipher_block, key)
 
     # Flip Left and Right blocks
-    cipher_bits = _bytes_to_binary_str(cipher_block)
-    cipher_block = _binary_str_to_bytes(cipher_bits[(len(cipher_bits) // 2):]) + _binary_str_to_bytes(cipher_bits[:(len(cipher_bits) // 2)])
+    cipher_block = cipher_block[(len(cipher_block) // 2):] + cipher_block[:(len(cipher_block) // 2)]
 
     # Perform final permutation
     cipher_block = _apply_table(cipher_block, IP_INV)
@@ -298,96 +256,91 @@ def _encrypt_block(block: bytes, keys: List[bytes]) -> bytes:
     return cipher_block
 
 
-def _des_round(block: bytes, key: bytes) -> bytes:
+def _des_round(block: bitarray, key: bitarray) -> bitarray:
     '''
     A single round of DES encryption
     '''
-    assert(len(block) == 8)  # block should be 8 bytes/64 bits
-    assert(len(key) == 6)  # Key should be 48 bits
+    assert(len(block) == BLOCK_SIZE)  # block should be 8 bytes/64 bits
+    assert(len(key) == 48)  # Key should be 48 bits
 
     # Split Data in half
-    left_half: bytes = block[:int((len(block)/2))]
-    right_half: bytes = block[int((len(block)/2)):]
+    left_half: bitarray = block[:(len(block) // 2)]
+    right_half: bitarray = block[(len(block) // 2):]
 
     # Expand right half
     expanded_bytes = _expansion(right_half)
     # Exclusive or with the key and the expanded bytes
-    expanded_bytes = _xor(expanded_bytes, key)
+    expanded_bytes = expanded_bytes ^ key
     # Substitute then convert to hex
     compressed_bytes = _substitution(expanded_bytes)
-    compressed_hex = _binary_str_to_bytes(compressed_bytes)
     # Permute the compressed value
-    compPerm_bytes = _permutation(compressed_hex)
+    compPerm_bytes = _permutation(compressed_bytes)
     # Exclusive or with the compressed and permuted half with the left half then convert to hex
-    new_right_half = _xor(compPerm_bytes, left_half)
+    new_right_half = compPerm_bytes ^ left_half
     # Combine left and right
     return right_half + new_right_half
 
 
 
-def _expansion(half: bytes) -> bytes:
+def _expansion(half: bitarray) -> bitarray:
     '''
     Expand the half for DES
     '''
-    assert(len(half) == 4)  # half should be 32 bits
+    assert(len(half) == (BLOCK_SIZE // 2))  # half should be 32 bits
     expansion_table = [32, 1, 2, 3, 4, 5, 4, 5, 6, 7, 8, 9, 8, 9, 10, 11, 12, 13, 12, 13, 14, 15, 16,
                        17, 16, 17, 18, 19, 20, 21, 20, 21, 22, 23, 24, 25, 24, 25, 26, 27, 28, 29, 28, 29, 30, 31, 32, 1]
 
-    expanded: bytes = _apply_table(half, expansion_table)
+    expanded: bitarray = _apply_table(half, expansion_table)
 
-    assert(len(expanded) == 6)  # expanded should be 48 bits
+    assert(len(expanded) == 48)  # expanded should be 48 bits
     return expanded
 
 
-def _substitution(expanded_half: bytes) -> str:
+def _substitution(expanded_half: bitarray) -> bitarray:
     '''
     Use substitution on the expanded half
     '''
     # TODO: Implement substitution table
     # Use the S1Mat for the Substitution matrix
-    binary_string = _bytes_to_binary_str(expanded_half)
-    totalCount = len(binary_string) // 6
-    bitStr = ''
+    expanded_half = expanded_half
+    totalCount = len(expanded_half) // 6
+    bitStr = bitarray()
 
     # Need to look at every 6 bits. The oth and 5th bit of a group, then the 1st through 4th bits for the inner.
     for i in range(totalCount):
         a = i*6
-        aBit = binary_string[a]
+        aBit = expanded_half[a]
         b = i*6 + 5
-        bBit = binary_string[b]
-        cStr = binary_string[a+1:b]
+        bBit = expanded_half[b]
+        cStr = expanded_half[a+1:b]
 
-        iNum = int((aBit + bBit), 2)
-        jNum = int(cStr, 2)
-        SNum = bin(S[i][iNum][jNum])[2:]
-
-        while(len(SNum) < 4):
-            SNum = '0' + SNum
+        iNum = int(bitarray([aBit, bBit]).to01(), 2)
+        jNum = int(cStr.to01(), 2)
+        SNum = bitarray_S[i][iNum][jNum]
 
         bitStr += SNum
-
     return bitStr
 
 
-def _permutation(compressed_bytes: bytes) -> bytes:
+def _permutation(compressed_bytes: bitarray) -> bitarray:
     '''
     Uses the permutation table on the compressed half.
     '''
-    assert(len(compressed_bytes) == 4)  # expanded should be 32 bits
+    assert(len(compressed_bytes) == (BLOCK_SIZE // 2))  # expanded should be 32 bits
     permutation_table = [16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5,
                          18, 31, 10, 2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25]
 
     permuted = _apply_table(compressed_bytes, permutation_table)
 
-    assert(len(compressed_bytes) == 4)  # half should be 32 bits
+    assert(len(compressed_bytes) == (BLOCK_SIZE // 2))  # half should be 32 bits
     return permuted
 
 if __name__ == "__main__":
-    plaintext = input('Enter your message: ')
+    plaintext = bytes.fromhex('0123456789ABCDEF')
     key = bytes.fromhex('133457799BBCDFF1')
     print(f'Using {key.hex()} for a key')
 
-    plaintext_bytes = ascii_to_bytes(plaintext)
+    plaintext_bytes = plaintext
     ciphertext = encrypt(plaintext_bytes, key)
     print('Your ciphertext is:')
     print(ciphertext.hex())
