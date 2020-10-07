@@ -10,11 +10,13 @@ def parse_args():
     parser.add_argument('mode', metavar='[encrypt|decrypt]', choices=['encrypt', 'decrypt'])
     parser.add_argument('INPUT_FILE', type=Path)
     parser.add_argument('OUTPUT_FILE')
+    parser.add_argument('KEY_FILE')
     return parser.parse_args()
 
 if __name__ == "__main__":
     ARGS = parse_args()
-    key = bytes.fromhex('133457799BBCDFF1')
+    with open(ARGS.KEY_FILE, 'r') as f:
+        key = bytes.fromhex(f.read())
 
     if ARGS.mode == 'encrypt':
         # Read plaintext
